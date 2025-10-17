@@ -16,15 +16,7 @@ def conv_bn_act(in_ch, out_ch, k=3, s=1, p=1, act=True):
         m.append(nn.SiLU(inplace=True))
     return nn.Sequential(*m)
 
-class DepthwiseSeparable(nn.Module):
-    def __init__(self, in_ch, out_ch, k=3, s=1, p=1):
-        super().__init__()
-        self.dw = nn.Conv2d(in_ch, in_ch, k, s, p, groups=in_ch, bias=False)
-        self.pw = nn.Conv2d(in_ch, out_ch, 1, 1, 0, bias=False)
-        self.bn = nn.BatchNorm2d(out_ch)
-        self.act = nn.SiLU(inplace=True)
-    def forward(self, x):
-        x = self.dw(x); x = self.pw(x); x = self.bn(x); return self.act(x)
+
 
 # -----------------------------
 # 1. Anomaly-Aware CNN Stem (Option1: Standard Conv + High-Freq branch)
@@ -263,46 +255,7 @@ class YOLOHeadLite(nn.Module):
 # -----------------------------
 # 5. 전체 모델: HybridOneWay
 # -----------------------------
-class HybridOneWay(nn.Module):
-    """
-    입력 640x640 → Stem(1/8) → ViT → P3/P4/P5 → Head
-    """
-    def __init__(self,
-                 in_ch=3,
-                 stem_base=48,
-                 embed_dim=512,
-                 vit_depth=8,
-                 vit_heads=8,
-                 num_classes=1):
-        super().__init__()
-        self.stem = AnomalyAwareStem(in_ch=in_ch, base_ch=stem_base)
-        c_stem = stem_base*4
-        self.patch = PatchEmbed1x1(c_stem, embed_dim)
-        self.vit = ViTEncoder(embed_dim=embed_dim, depth=vit_depth, num_heads=vit_heads)
-        self.neck = PANLite(in_ch=embed_dim, mid=256)
-        self.head = YOLOHeadLite(in_ch=256, num_classes=num_classes)
 
-    def forward(self, x):
-        """
-        반환:
-          preds: [(cls,obj,box)_P3, ... P4, P5] 각 (B,C,H,W)
-          aux:   {'P3':(B,embed_dim,H,W), 'V':(B,1,H,W)} 등
-        """
-        B, _, H, W = x.shape
-        # 1) stem
-        f, v = self.stem(x)                        # (B,Cs,H/8,W/8), (B,1,H/8,W/8)
-        # 2) patch → tokens
-        p = self.patch(f)                          # (B, D, H/8, W/8)
-        Ht, Wt = p.shape[-2:]
-        tokens = p.flatten(2).transpose(1, 2)      # (B, N=Ht*Wt, D)
-        # 3) ViT
-        tokens = self.vit(tokens)                  # (B, N, D)
-        # 4) 2D 복원 → neck
-        p3 = tokens.transpose(1, 2).reshape(B, -1, Ht, Wt)  # (B,D,H/8,W/8)
-        p3, p4, p5 = self.neck(p3)                 # (B,256, H/8, H/16, H/32 ...)
-        # 5) head
-        preds = self.head(p3, p4, p5)
-        return preds, {'P3': p3, 'P4': p4, 'P5': p5, 'V': v}
     
 # -----------------------------
 # 실제 양방향(피드백) 버전:
@@ -380,15 +333,10 @@ class HybridTwoWay(nn.Module):
 # 6. 간단한 테스트
 # -----------------------------
 if __name__ == "__main__":
-    model1 = HybridOneWay(in_ch=3, stem_base=48, embed_dim=512, vit_depth=8, vit_heads=8, num_classes=1)
-    x = torch.randn(2, 3, 640, 640)
-    preds1, aux1 = model1(x)
-    for i, (c, o, b) in enumerate(preds1, start=3):
-        print(f"[OneWay] P{i} cls:{list(c.shape)} obj:{list(o.shape)} box:{list(b.shape)}")
-
     # --- 실제 양방향(피드백) ---
-    model2 = HybridTwoWay(in_ch=3, stem_base=48, embed_dim=512, vit_depth=8, vit_heads=8,
+    model = HybridTwoWay(in_ch=3, stem_base=48, embed_dim=512, vit_depth=8, vit_heads=8,
                           num_classes=1, iters=1, detach_feedback=True)  # 안정화를 위해 초기엔 detach 권장
-    preds2, aux2 = model2(x)
-    for i, (c, o, b) in enumerate(preds2, start=3):
+    x = torch.randn(2, 3, 640, 640)
+    preds, aux = model(x)
+    for i, (c, o, b) in enumerate(preds, start=3):
         print(f"[TwoWay] P{i} cls:{list(c.shape)} obj:{list(o.shape)} box:{list(b.shape)}")
