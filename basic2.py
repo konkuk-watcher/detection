@@ -329,9 +329,7 @@ class HybridTwoWay(nn.Module):
 
 
 
-# -----------------------------
-# 6. 간단한 테스트
-# -----------------------------
+
 if __name__ == "__main__":
     # --- 실제 양방향(피드백) ---
     model = HybridTwoWay(in_ch=3, stem_base=48, embed_dim=512, vit_depth=8, vit_heads=8,

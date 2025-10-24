@@ -5,6 +5,10 @@
 > **모델 구조:** CNN Stem → ViT Encoder → 피드백 → Detection Neck/Head  
 > **목표:** CNN의 국소 특징과 ViT의 전역 문맥을 피드백 루프로 결합하여 탐지 정확도 향상
 
+
+> **사용파일:** model.ipynb 
+
+
 ---
 
 ## 1️⃣ 프로젝트 배경
