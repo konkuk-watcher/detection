@@ -255,15 +255,6 @@ class YOLOHeadLite(nn.Module):
 # -----------------------------
 # 5. 전체 모델: HybridOneWay
 # -----------------------------
-
-    
-# -----------------------------
-# 실제 양방향(피드백) 버전:
-# Stem → ViT → (FeedbackAdapter로 Stem 재조정) → Neck → Head
-# iters>1 로 두면 간단한 반복(Iterative) 갱신도 가능
-# detach_feedback=True 로 하면 안정화를 위해 피드백 경로의 gradient 차단
-# -----------------------------
-
 class HybridTwoWay(nn.Module):
     """
     실제 양방향(피드백) 버전:
