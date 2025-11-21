@@ -7,6 +7,7 @@
 
 
 > **사용파일:** model.ipynb
+> **모델 구조 개선:** Flash Attention 적용, Dynamic Positional Embedding resizing, torch.compile 지원
 
 
 ---
@@ -49,18 +50,20 @@
 ③ Positional Embedding
    ├─ 2D 공간 정보를 1D 시퀀스에 추가
    └─ 이미지 크기(640x640) 기준으로 사전 학습된 위치 임베딩
+   └─ 다이나믹 리사이징 지원 (bicubic interpolation)
    │
    ▼
 ④ ViT Encoder
    ├─ CNN feature를 flatten → (B, N=Ht×Wt, D)
    ├─ Multihead Self-Attention으로 전역 문맥 학습
+   ├─ Flash Attention 적용 (scaled_dot_product_attention)
    ├─ Transformer 블록으로 구성 (LayerNorm + Attention + MLP)
    ├─ 출력 토큰 (B, N, D)
    │
    ▼
 ⑤ FeedbackAdapter
    ├─ ViT 토큰을 reshape → (B, D, Ht, Wt)
-   ├─ 1×1 conv로 (γ, β) 생성
+   ├─ 1×1 conv로 (γ, β) 생성 (c_stem * 2 채널)
    ├─ CNN 출력 보정:
      f_fb = f_stem × (1 + tanh(γ)) + β
    └─ CNN의 지역 특징을 ViT가 본 전역 문맥으로 재조정
@@ -71,7 +74,8 @@
    │
    ▼
 ⑦ 반복 (iters 지정 횟수만큼)
-   ├─ ViT 처리 → Feedback 적용 → Neck/Head 예측
+   ├─ ViT 처리 → Feedback 적용 (detach_feedback 옵션)
+   ├─ Neck/Head 예측
    └─ 다음 반복을 위한 토큰 준비
    │
    ▼
@@ -84,6 +88,7 @@
 ⑨ YOLOHeadLite
    ├─ P3, P4, P5 각각에 대해 (cls, obj, box) 예측
    ├─ 3x3 conv stem + 1x1 conv head 블록
+   ├─ obj 레이어 bias 초기값: -4.59 (confidence 맞춤)
    └─ 각 스케일에서 클래스, 신뢰도, 바운딩박스 예측
    │
    ▼
@@ -101,10 +106,24 @@
 
 ---
 
+## 모델 구성 파라미터
+
+- **in_ch**: 3 (입력 채널 수)
+- **stem_base**: 32 (AnomalyAwareStem 기본 채널 수)
+- **embed_dim**: 256 (ViT 임베딩 차원)
+- **vit_depth**: 4 (ViT 인코더 블록 수)
+- **vit_heads**: 4 (Multihead Attention 헤드 수)
+- **num_classes**: 3 (클래스 수)
+- **iters**: 1 (반복 횟수)
+- **detach_feedback**: True (피드백 토큰 detach 여부)
+- **img_size**: 640 (입력 이미지 크기)
+
+---
+
 ## 환경 및 라이브러리
 
 - **Python >= 3.8**
-- **torch >= 1.10**
+- **torch >= 2.0** (Flash Attention, torch.compile 지원)
 - **torchvision**
 - **numpy**
 - **opencv-python**
@@ -112,6 +131,7 @@
 - **pillow**
 - **matplotlib**
 - **roboflow** (데이터셋 다운로드용)
+- **albumentations** (데이터 증강용 - 선택적)
 
 *`model.ipynb` 기준이며, 데이터 증강, 후처리 등에 따라 다른 라이브러리가 필요할 수 있습니다.*
 
@@ -120,11 +140,33 @@
 ## 학습 및 평가
 
 모델 학습은 YOLO 스타일의 손실 함수를 사용하여 진행됩니다:
-- **클래스 예측**: Focal Loss
-- **신뢰도 예측**: Focal Loss
+- **클래스 예측**: Focal Loss (alpha=0.25, gamma=2.0)
+- **신뢰도 예측**: Focal Loss (alpha=0.25, gamma=2.0)
 - **바운딩박스 예측**: GIoU Loss
 
 각 스케일(P3, P4, P5)에서 독립적으로 예측을 수행하고, 모든 스케일의 예측을 통합하여 최종 손실을 계산합니다.
 
+학습 설정:
+- **옵티마이저**: Adam (lr=1e-4)
+- **에포크 수**: 5
+- **배치 크기**: 8
+- **AMP (Automatic Mixed Precision)**: 활성화 (torch.amp.autocast)
+- **Gradient Scaler**: torch.cuda.amp.GradScaler
+- **num_workers**: 2
+- **pin_memory**: True
+
+torch.compile 지원:
+- **torch.compile**: 모델 컴파일 옵션 (PyTorch 2.0+ 지원)
+- **Flash Attention**: torch.nn.functional.scaled_dot_product_attention 사용
+
 학습된 모델은 mAP@0.5 지표를 사용하여 검증 및 테스트 데이터셋에서 평가됩니다.
+
+평가 지표 및 방법:
+- **mAP@0.5**: 0.5 IoU 임계값 기준 평균 정밀도
+- **Confidence threshold**: 0.25
+- **NMS IoU threshold**: 0.5
+- **클래스 수**: 3 (num_classes 파라미터에 따라 조정 가능)
+- **이미지 크기**: 640 (img_size 파라미터에 따라 조정 가능)
+- **예측 디코딩**: NMS (Non-Maximum Suppression) 적용
+- **성능 저장**: 최고 성능 모델은 'hybrid_two_way_best.pt'로 저장
 
