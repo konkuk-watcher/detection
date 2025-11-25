@@ -114,9 +114,9 @@ Advanced 모델은 사전학습된 ViT 모델을 사용하여 더 강력한 전�
 - **embed_dim**: 768 (ViT Base 임베딩 차원 - 사전학습 모델에 따라 조정)
 - **vit_model_name**: 'vit_base_patch16_224.augreg_in21k_ft_in1k' (Timm 사전학습 모델명)
 - **num_classes**: 3 (클래스 수)
-- **iters**: 2 (반복 횟수 - Advanced 모델에서는 증가)
+- **iters**: 1 (반복 횟수 - Notebook에서는 Safe Mode로 1로 설정)
 - **detach_feedback**: False (피드백 토큰 detach 여부 - Advanced 모델에서는 False)
-- **img_size**: 640 (입력 이미지 크기)
+- **img_size**: 512 (입력 이미지 크기)
 
 ---
 
@@ -148,7 +148,7 @@ Advanced 모델 학습은 YOLOv8 스타일의 Task Aligned Assignment (TAL) 손�
 각 스케일(P3, P4, P5)에서 독립적으로 예측을 수행하고, Task Aligned Assignment를 통해 예측-정답 할당을 최적화한 후 손실을 계산합니다.
 
 학습 설정:
-- **옵티마이저**: AdamW (lr=5e-5, weight_decay=0.05) - Weight Decay로 일반화 성능 향상
+- **옵티마이저**: AdamW (lr=2e-5, weight_decay=0.05) - Notebook "Safe Mode" 설정
 - **에포크 수**: 15 (전체 학습을 위해 50~100 필요)
 - **배치 크기**: 4 (VRAM 절약을 위해 감소)
 - **AMP (Automatic Mixed Precision)**: 활성화 (torch.amp.autocast, float16)
@@ -157,7 +157,7 @@ Advanced 모델 학습은 YOLOv8 스타일의 Task Aligned Assignment (TAL) 손�
 - **pin_memory**: True
 - **Gradient Clipping**: max_norm=0.5 (ViT 학습에서 중요)
 - **Gradient Accumulation**: 4스텝 (실제 배치 크기 16으로 증가)
-- **Learning Rate Scheduler**: OneCycleLR (max_lr=1e-4, pct_start=0.2, warmup 20%)
+- **Learning Rate Scheduler**: OneCycleLR (max_lr=2e-5, pct_start=0.3)
 
 torch.compile 지원:
 - **torch.compile**: 모델 컴파일 옵션 (PyTorch 2.0+ 지원)
